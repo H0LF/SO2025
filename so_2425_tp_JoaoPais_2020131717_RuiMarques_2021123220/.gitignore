@@ -1,0 +1,47 @@
+# Executáveis
+feed
+manager
+
+# Ficheiros de objetos
+*.o
+*.out
+
+# Ficheiros de backup e temporários
+*~
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Ficheiros de sistema
+.DS_Store
+Thumbs.db
+
+# FIFOs (embora estejam em /tmp)
+fifo_*
+
+# Ficheiros de log
+*.log
+
+# Ficheiros de core dump
+core
+core.*
+
+# Ficheiros de debug
+*.dSYM/
+
+# Ficheiros gerados pelo IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Ficheiros de compilação
+*.a
+*.so
+*.dylib
+
+# Ficheiros de memória (opcional - descomentar se não quiser versionar)
+# memoria.txt
+
+# Relatórios compilados (se houver versão fonte)
+# *.pdf

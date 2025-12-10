@@ -1,16 +1,19 @@
-all: feed manager
+CC = gcc
+CFLAGS = -Wall -pthread
 
-feed: feed.c utils.h
-	gcc feed.c -o feed
+all: controlador cliente veiculo
 
-manager: manager.c operacoesmemoria.c utils.c threads.c utils.h
-	gcc manager.c operacoesmemoria.c utils.c threads.c -pthread -o manager
+controlador: controlador.c utils.c utils.h
+	$(CC) $(CFLAGS) -o controlador controlador.c utils.c
+
+cliente: cliente.c utils.h
+	$(CC) $(CFLAGS) -o cliente cliente.c
+
+veiculo: veiculo.c utils.h
+	$(CC) $(CFLAGS) -o veiculo veiculo.c
 
 clean:
-	rm -f feed manager
+	rm -f *.o controlador cliente veiculo
+	rm -f /tmp/fifo_controlador /tmp/fifo_cliente_* /tmp/fifo_veiculo_*
 
-clean-feed:
-	rm -f feed
-
-clean-manager:
-	rm -f manager
+.PHONY: all clean

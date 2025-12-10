@@ -1,163 +1,146 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <stdio.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <pthread.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/select.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
+// Limites conforme enunciado
+#define MAX_UTILIZADORES 30
+#define MAX_VEICULOS 10
+#define MAX_SERVICOS 100
 
-#define TAM_MSG 300
+// Tamanhos de buffers
 #define TAM_NOME 50
-#define TAM_FIFO 17
-#define TAM_TOPICO 20
-#define MAX_TOPICOS 20
-#define MAX_UTILIZADORES 10
-#define MAX_TOPICOS_PERMANENTES 5
+#define TAM_LOCAL 100
+#define TAM_COMANDO 256
+#define TAM_BUFFER 512
 
+// Named pipes
+#define FIFO_CONTROLADOR "/tmp/fifo_controlador"
+#define FIFO_CLIENTE "/tmp/fifo_cliente_%d"
 
-#define Client_Pipe "/tmp/fifo%d"
-#define FIFO_SERVER "/tmp/fifo_server"
+// Estados do serviço
+typedef enum {
+    SERVICO_AGENDADO = 0,
+    SERVICO_EM_EXECUCAO = 1,
+    SERVICO_CONCLUIDO = 2,
+    SERVICO_CANCELADO = 3
+} EstadoServico;
 
+// Tipos de mensagens entre cliente e controlador
+typedef enum {
+    MSG_LOGIN = 1,
+    MSG_AGENDAR = 2,
+    MSG_CANCELAR = 3,
+    MSG_CONSULTAR = 4,
+    MSG_TERMINAR = 5,
+    MSG_RESPOSTA = 10,
+    MSG_NOTIFICACAO = 11
+} TipoMensagem;
 
-
-
-
-// ESTRUTURAS
-
+// Estrutura de comunicação cliente<->controlador
 typedef struct {
-    char conteudo[TAM_MSG];
-    int tempodevida;
-    char quem_enviou[TAM_NOME];
-} Mensagem;
+    TipoMensagem tipo;
+    char username[TAM_NOME];
+    int pid_cliente;
+    
+    // Campos para agendar
+    int hora_agendada;
+    char local_partida[TAM_LOCAL];
+    int distancia_km;
+    
+    // Campos para cancelar
+    int id_servico;
+    
+    // Resposta
+    int sucesso;
+    char mensagem[TAM_BUFFER];
+} MensagemCliente;
 
-
+// Estrutura de comunicação veiculo->cliente
 typedef struct {
-    char nome[TAM_NOME];
-} Subscritores;
+    int tipo; // 1=chegada, 2=iniciar, 3=cancelado
+    char destino[TAM_LOCAL];
+    char mensagem[TAM_BUFFER];
+} MensagemVeiculo;
 
-
+// Estrutura de um serviço de transporte
 typedef struct {
-    char titulo[TAM_TOPICO];          // Nome da rota/zona
-    Mensagem msg[5];
-    int npermanentes;  
-    Subscritores subs[MAX_UTILIZADORES];
-    int numsub;
-    int bloqueio;    // 0 rota aberta, 1 rota fechada/bloqueada         
-} Topico;
+    int id;
+    char username[TAM_NOME];
+    int pid_cliente;
+    int hora_agendada;
+    char local_partida[TAM_LOCAL];
+    char local_destino[TAM_LOCAL];
+    int distancia_km;
+    EstadoServico estado;
+    int pid_veiculo;
+    int percentagem_percorrida;
+} Servico;
 
- 
+// Estrutura de um cliente conectado
 typedef struct {
-    char nome[TAM_NOME];  // Identificador do veículo/motorista
-    char fifo[TAM_FIFO];
-    int pid;     
-    int estado; // 1 = veículo ativo na frota, 0 = inativo   
-} Utilizador;
-
-
-typedef struct {
-    Topico topico[MAX_TOPICOS];
-    Utilizador user[MAX_UTILIZADORES];
-    int fd_server_fifo;
-    pthread_mutex_t * mutex;
-    int trinco;
-} Data;
-
-
-typedef struct {
-    char titulo[TAM_TOPICO];  
-    int nperm;           
-} TopicosF; 
-
-
-typedef struct {
-    int flag;
+    char username[TAM_NOME];
     int pid;
-    char nome[TAM_NOME];
-} Login;
+    int ativo;
+    int em_viagem;
+} Cliente;
 
-
+// Estrutura de um veículo em operação
 typedef struct {
     int pid;
-    char nome[TAM_NOME];
-    char conteudo[300];
-} FeedData;
+    int id_servico;
+    int percentagem_percorrida;
+    int ativo;
+} Veiculo;
 
-
+// Estrutura principal do controlador
 typedef struct {
-    int flag;
-    char conteudo[300];
-} Mresposta;
+    Cliente clientes[MAX_UTILIZADORES];
+    int num_clientes;
+    
+    Servico servicos[MAX_SERVICOS];
+    int num_servicos;
+    int proximo_id_servico;
+    
+    Veiculo veiculos[MAX_VEICULOS];
+    int max_veiculos;
+    int veiculos_disponiveis;
+    
+    int tempo_atual;
+    int total_km_percorridos;
+    int terminar;
+    
+    pthread_mutex_t mutex;
+    int fd_controlador;
+} Controlador;
 
+// Funções auxiliares
+int cliente_existe(Controlador *ctrl, const char *username);
+int adicionar_cliente(Controlador *ctrl, const char *username, int pid);
+int remover_cliente(Controlador *ctrl, const char *username);
+Cliente* buscar_cliente(Controlador *ctrl, const char *username);
 
-typedef struct {
-    int num_Topicos;
-    TopicosF top[MAX_TOPICOS];
-} MSGTopicos;
+int adicionar_servico(Controlador *ctrl, const char *username, int pid, int hora, 
+                      const char *local, int distancia);
+Servico* buscar_servico(Controlador *ctrl, int id);
+int cancelar_servico(Controlador *ctrl, int id, const char *username);
+void listar_servicos_usuario(Controlador *ctrl, const char *username, char *resultado);
 
+int alocar_veiculo(Controlador *ctrl);
+void liberar_veiculo(Controlador *ctrl, int pid_veiculo);
+void processar_telemetria(Controlador *ctrl, int pid_veiculo, const char *info);
 
-// ESTRUTURAS - envelopes
-typedef struct {
-    int tipo;
-    Login login;
-} Envia1;
+void inicializar_controlador(Controlador *ctrl);
+void verificar_servicos_agendados(Controlador *ctrl);
 
-typedef struct {
-    int tipo;
-    FeedData msg;
-} Envia2;
-
-typedef struct {
-    int tipo;
-    MSGTopicos lista;
-} Envia3;
-
-typedef struct {
-    int tipo;
-    Mresposta resposta;
-} Envia4;
-
-
-
-
-// Definições de funções
-
-// utils.c
-void imprime_prompt();
-void preparacao(Data *d);
-void mostra_users(Data *dt);
-void remove_user(Data *dt, const char *username);
-void envia_mensagem_para_subscritores(Data *dt, const char *topico, const char *mensagem, const char *user);
-void envia_mensagens_persistentes(Data *dt, const char *topico, const char *nome_user, int cliente_fd);
-void encerrar_todos_feeds(Data *data, const char *mensagem);
-void validacomandosF(int cliente_fd, FeedData *dt, Envia3 *tm, Envia4 *de, Data *data);
-
-
-// operacoesmemoria.c
-int processa_mensagem(Data *data, Login *dt);
-int cria_topico(const char *nome, Data *dt, const char *nome_user);
-int unsubscribe_topico(const char *nome, Data *dt, const char *nome_user);
-int mostra_topicsF(Data *dt, Envia3 *tm, Envia4 *de);
-void mostra_topicsM(Data *dt);
-void bloqueiaTopico(Data *dt, const char *nome);
-void desbloqueiaTopico(Data *dt, const char *nome);
-int adiciona_Msg(const char *nome, const char *msg, Data *dt, int tempo, const char *user);
-void sh_Topico(Data *dt, const char *nome);
-void encerrar_feed(Data *data, int pid, const char *mensagem);
-int cria_txt(Data *dt);
-int le_txt(Data *dt);
-
-
-// threads.c
-void *thread_comunicacao(void *args);
-void *thread_tempo(void *args);
-
-
-#endif // UTILS_H
+#endif

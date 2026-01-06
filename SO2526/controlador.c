@@ -9,7 +9,44 @@ void *thread_tempo(void *arg) {
         ctrl.tempo_atual++;
         pthread_mutex_unlock(&ctrl.mutex);
         
+        // verificar_servicos_agendados já faz seu próprio locking
         verificar_servicos_agendados(&ctrl);
+    }
+    return NULL;
+}
+
+void *thread_telemetria(void *arg) {
+    while (!ctrl.terminar) {
+        pthread_mutex_lock(&ctrl.mutex);
+        for (int i = 0; i < ctrl.max_veiculos; i++) {
+            if (ctrl.veiculos[i].ativo && ctrl.veiculos[i].pid > 0) {
+                // Verificar se processo ainda está ativo
+                int status;
+                pid_t result = waitpid(ctrl.veiculos[i].pid, &status, WNOHANG);
+                
+                if (result > 0) {
+                    // Processo terminou - recolher zombie
+                    Servico *s = buscar_servico(&ctrl, ctrl.veiculos[i].id_servico);
+                    if (s != NULL) {
+                        if (s->estado == SERVICO_EM_EXECUCAO) {
+                            s->estado = SERVICO_CONCLUIDO;
+                            ctrl.total_km_percorridos += s->distancia_km;
+                        }
+                        
+                        Cliente *c = buscar_cliente(&ctrl, s->username);
+                        if (c) c->em_viagem = 0;
+                    }
+                    
+                    ctrl.veiculos[i].ativo = 0;
+                    ctrl.veiculos[i].pid = 0;
+                    ctrl.veiculos_disponiveis++;
+                    
+                    printf("[TELEMETRIA] Veículo (PID %d) terminado e zombie recolhido\n", result);
+                }
+            }
+        }
+        pthread_mutex_unlock(&ctrl.mutex);
+        sleep(1);
     }
     return NULL;
 }
@@ -28,7 +65,11 @@ void *thread_comunicacao(void *arg) {
         resposta.pid_cliente = msg.pid_cliente;
         
         sprintf(fifo_cliente, FIFO_CLIENTE, msg.pid_cliente);
-        int fd_cliente = open(fifo_cliente, O_WRONLY);
+        int fd_cliente = open(fifo_cliente, O_WRONLY | O_NONBLOCK);
+        
+        if (fd_cliente == -1) {
+            continue; // Cliente desconectou
+        }
         
         switch (msg.tipo) {
             case MSG_LOGIN:
@@ -55,9 +96,12 @@ void *thread_comunicacao(void *arg) {
                     sprintf(resposta.mensagem, "Serviço agendado com ID %d para hora %d", 
                            id, msg.hora_agendada);
                     printf("[AGENDAR] %s agendou serviço %d\n", msg.username, id);
+                } else if (id == -2) {
+                    resposta.sucesso = 0;
+                    strcpy(resposta.mensagem, "Dados inválidos (hora<0, distância<=0 ou local vazio)!");
                 } else {
                     resposta.sucesso = 0;
-                    strcpy(resposta.mensagem, "Erro ao agendar serviço!");
+                    strcpy(resposta.mensagem, "Erro ao agendar serviço (limite atingido)!");
                 }
                 break;
             }
@@ -219,7 +263,7 @@ int main() {
     printf("Sistema iniciado.\n\n");
     
     // Criar threads
-    pthread_t th_comunicacao, th_tempo;
+    pthread_t th_comunicacao, th_tempo, th_telemetria;
     
     if (pthread_create(&th_tempo, NULL, thread_tempo, NULL) != 0) {
         perror("Erro ao criar thread de tempo");
@@ -228,6 +272,11 @@ int main() {
     
     if (pthread_create(&th_comunicacao, NULL, thread_comunicacao, NULL) != 0) {
         perror("Erro ao criar thread de comunicação");
+        exit(1);
+    }
+    
+    if (pthread_create(&th_telemetria, NULL, thread_telemetria, NULL) != 0) {
+        perror("Erro ao criar thread de telemetria");
         exit(1);
     }
     
@@ -246,15 +295,32 @@ int main() {
     }
     
     // Cancelar todos os serviços ativos
+    printf("\n[SHUTDOWN] A cancelar serviços ativos...\n");
     for (int i = 0; i < ctrl.num_servicos; i++) {
         if (ctrl.servicos[i].estado == SERVICO_EM_EXECUCAO) {
             kill(ctrl.servicos[i].pid_veiculo, SIGUSR1);
         }
     }
     
+    // Dar tempo para veículos terminarem graciosamente
+    sleep(2);
+    
     // Aguardar threads
     pthread_join(th_comunicacao, NULL);
     pthread_join(th_tempo, NULL);
+    pthread_join(th_telemetria, NULL);
+    
+    // Recolher TODOS os zombies restantes (failsafe)
+    printf("[SHUTDOWN] A recolher processos zombie restantes...\n");
+    int zombies_recolhidos = 0;
+    pid_t pid;
+    while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+        zombies_recolhidos++;
+        printf("[SHUTDOWN] Zombie recolhido: PID %d\n", pid);
+    }
+    if (zombies_recolhidos > 0) {
+        printf("[SHUTDOWN] Total de zombies recolhidos: %d\n", zombies_recolhidos);
+    }
     
     // Limpar recursos
     close(ctrl.fd_controlador);

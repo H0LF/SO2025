@@ -1,6 +1,6 @@
 #include "utils.h"
 
-int cancelado = 0;
+volatile sig_atomic_t cancelado = 0;
 int id_servico;
 char username_cliente[TAM_NOME];
 int pid_cliente;
@@ -13,8 +13,6 @@ int fd_veiculo = -1;
 
 void sigusr1_handler(int sig) {
     cancelado = 1;
-    printf("CANCELADO: Serviço cancelado pelo controlador\n");
-    fflush(stdout);
 }
 
 void limpar_recursos() {
@@ -96,6 +94,8 @@ int main(int argc, char *argv[]) {
     }
     
     if (cancelado) {
+        printf("CANCELADO: Serviço cancelado pelo controlador\n");
+        fflush(stdout);
         limpar_recursos();
         return 0;
     }
@@ -134,6 +134,8 @@ int main(int argc, char *argv[]) {
     }
     
     if (cancelado) {
+        printf("CANCELADO: Serviço cancelado pelo controlador\n");
+        fflush(stdout);
         limpar_recursos();
         return 0;
     }

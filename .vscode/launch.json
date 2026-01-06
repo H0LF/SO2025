@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/H0LF/Documents/SO2025/so_2425_tp_JoaoPais_2020131717_RuiMarques_2021123220",
-      "program": "c:/Users/H0LF/Documents/SO2025/so_2425_tp_JoaoPais_2020131717_RuiMarques_2021123220/build/Debug/outDebug",
+      "cwd": "c:/Users/H0LF/Documents/SO2025/SO2025",
+      "program": "c:/Users/H0LF/Documents/SO2025/SO2025/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

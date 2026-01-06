@@ -5,6 +5,7 @@ int pid_cliente;
 char fifo_cliente[50];
 int fd_cliente;
 int conectado = 0;
+volatile sig_atomic_t terminar_cliente = 0;
 
 void limpar_recursos() {
     if (fd_cliente > 0) {
@@ -14,9 +15,7 @@ void limpar_recursos() {
 }
 
 void sigint_handler(int sig) {
-    printf("\nA terminar cliente...\n");
-    limpar_recursos();
-    exit(0);
+    terminar_cliente = 1;
 }
 
 int enviar_mensagem(MensagemCliente *msg) {
@@ -196,7 +195,7 @@ int main(int argc, char *argv[]) {
     char comando[TAM_COMANDO];
     fd_set read_fds;
     
-    while (conectado) {
+    while (conectado && !terminar_cliente) {
         FD_ZERO(&read_fds);
         FD_SET(STDIN_FILENO, &read_fds);
         FD_SET(fd_cliente, &read_fds);
@@ -232,6 +231,10 @@ int main(int argc, char *argv[]) {
                 printf("\n[VEÍCULO] %s\n", msg_veiculo.mensagem);
             }
         }
+    }
+    
+    if (terminar_cliente) {
+        printf("\nA terminar cliente...\n");
     }
     
     limpar_recursos();

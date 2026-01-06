@@ -98,6 +98,12 @@ int adicionar_servico(Controlador *ctrl, const char *username, int pid,
                       int hora, const char *local, int distancia) {
     pthread_mutex_lock(&ctrl->mutex);
     
+    // Validações de input
+    if (hora < 0 || distancia <= 0 || strlen(local) == 0) {
+        pthread_mutex_unlock(&ctrl->mutex);
+        return -2; // Input inválido
+    }
+    
     if (ctrl->num_servicos >= MAX_SERVICOS) {
         pthread_mutex_unlock(&ctrl->mutex);
         return -1;
@@ -154,7 +160,7 @@ int cancelar_servico(Controlador *ctrl, int id, const char *username) {
     // Se está em execução, envia SIGUSR1 ao veículo
     if (s->estado == SERVICO_EM_EXECUCAO && s->pid_veiculo > 0) {
         kill(s->pid_veiculo, SIGUSR1);
-        liberar_veiculo(ctrl, s->pid_veiculo);
+        // Liberar veículo será feito pela thread de telemetria quando detectar término
     }
     
     s->estado = SERVICO_CANCELADO;
@@ -178,21 +184,26 @@ void listar_servicos_usuario(Controlador *ctrl, const char *username, char *resu
                     ctrl->servicos[i].hora_agendada,
                     ctrl->servicos[i].local_partida,
                     ctrl->servicos[i].distancia_km);
-            strcat(resultado, linha);
+            
+            if (strlen(resultado) + strlen(linha) < TAM_BUFFER - 100) {
+                strcat(resultado, linha);
+            } else {
+                break; // Evitar buffer overflow
+            }
             
             switch(ctrl->servicos[i].estado) {
                 case SERVICO_AGENDADO:
-                    strcat(resultado, "Agendado\n");
+                    if (strlen(resultado) + 10 < TAM_BUFFER) strcat(resultado, "Agendado\n");
                     break;
                 case SERVICO_EM_EXECUCAO:
                     sprintf(linha, "Em execução (%d%%)\n", ctrl->servicos[i].percentagem_percorrida);
-                    strcat(resultado, linha);
+                    if (strlen(resultado) + strlen(linha) < TAM_BUFFER) strcat(resultado, linha);
                     break;
                 case SERVICO_CONCLUIDO:
-                    strcat(resultado, "Concluído\n");
+                    if (strlen(resultado) + 12 < TAM_BUFFER) strcat(resultado, "Concluído\n");
                     break;
                 default:
-                    strcat(resultado, "Desconhecido\n");
+                    if (strlen(resultado) + 15 < TAM_BUFFER) strcat(resultado, "Desconhecido\n");
             }
             encontrados++;
         }
